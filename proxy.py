@@ -124,7 +124,7 @@ class PacketProcessor:
             new_header = header.replace(
                 bytes(f"Content-Length: {content_length}", encoding="utf-8"),
                 bytes(f"Content-Length: {len(new_body)}", encoding="utf-8")
-            )  # Update the Content-Length header with the new length
+            ) # Update the Content-Length header with the new length
             return len(new_body), new_header, new_body
         except Exception as e:
             LOGGER.warn(f"Packet was not HTML, forwarding to client: {e}") # Something we wrong when trying to change the HTML so we will just send the original data
@@ -190,7 +190,7 @@ class TcpReadHandler:
             return 0, b"", b""
 
         str_header = header.decode("utf-8")
-        LOGGER.info(f"Server Response Header: {str_header}")
+        LOGGER.info(f"[Server=>Client] Server Response Header: {str_header}")
         # Get the value of the Content-Length header in order to tell how many bytes the body is
         content_length = TcpReadHandler.find_content_length(header)
         LOGGER.trace(f"Content length {content_length}")
@@ -264,7 +264,7 @@ class ConnectionHandler:
                 data = client_conn.recv(4096)  # proxy receiving the client request
                 if len(data) > 0:
                     str_data = data.decode("utf-8")
-                    LOGGER.info(f"Client Request: {str_data}")
+                    LOGGER.info(f"[Client=>Server] Client Request: {str_data}")
                     # sending the client request to the server (from proxy)
                     server_conn.sendall(data)
             except socket.error as e:
@@ -295,13 +295,21 @@ def main():
         sys.exit(0)
 
     signal.signal(signal.SIGINT, irq_handler) # Register an interrupt handler for SIGINT so we can close connections properly
+    LOGGER.debug("Configured signal handler")
 
     server_conn = ConnectionHandler.proxy_to_server_socket()
     server_thread = threading.Thread(target=ConnectionHandler.handle_server_response, args=(server_conn,client_conn))
     server_thread.setDaemon(True) #run in background so that the subsequenct threads will terminate once the main thread ends
+    server_thread.setName("Server Thread")
     server_thread.start()
+    LOGGER.info("Started server handler thread")
 
-    ConnectionHandler.handle_client_request(server_conn, client_conn, client_addr)
+    client_thread = threading.Thread(target=ConnectionHandler.handle_client_request, args=(server_conn, client_conn, client_addr))
+    client_thread.setDaemon(True)
+    client_thread.setName("Client Thread")
+    client_thread.start()
+    LOGGER.info("Started client handler thread")
+    client_thread.join()
 
 if __name__ == '__main__':
     main()
